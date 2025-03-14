@@ -275,6 +275,10 @@ impl<'a> fmt::Debug for TlsExtension<'a> {
                 "TlsExtension::EncryptedServerName{{cipher: {:?}, group: {:?} ..}}",
                 ciphersuite, group
             ),
+            TlsExtension::QuicTransportParameters(ref v) => {
+                let v: Vec<_> = v.iter().map(|c| format!("{:?}", c)).collect();
+                write!(fmt, "TlsExtension::QuicTransportParameters({:?})", v)
+            }
             TlsExtension::Grease(t, data) => write!(
                 fmt,
                 "TlsExtension::Grease(0x{:x},data={:?})",
