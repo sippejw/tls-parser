@@ -153,7 +153,7 @@ pub enum TlsExtension<'a> {
         encrypted_sni: &'a [u8],
     },
 
-    QuicTransportParameters(Vec<QuicTransportParameter<'a>>),
+    QuicTransportParameters(&'a [u8]),
 
     Grease(u16, &'a [u8]),
 
@@ -191,7 +191,7 @@ impl<'a> From<&'a TlsExtension<'a>> for TlsExtensionType {
             TlsExtension::NextProtocolNegotiation       => TlsExtensionType::NextProtocolNegotiation,
             TlsExtension::RenegotiationInfo(_)          => TlsExtensionType::RenegotiationInfo,
             TlsExtension::EncryptedServerName{..}       => TlsExtensionType::EncryptedServerName,
-            TlsExtension::QuicTransportParameters{..}    => TlsExtensionType::QuicTransportParameters,
+            TlsExtension::QuicTransportParameters(_)    => TlsExtensionType::QuicTransportParameters,
             TlsExtension::Grease(_,_)                   => TlsExtensionType::Grease,
             TlsExtension::Unknown(x,_)                  => x
         }
@@ -625,6 +625,7 @@ pub fn parse_tls_extension_renegotiation_info_content(i: &[u8]) -> IResult<&[u8]
     map(length_data(be_u8), TlsExtension::RenegotiationInfo)(i)
 }
 
+
 /// Encrypted Server Name, defined in [draft-ietf-tls-esni]
 pub fn parse_tls_extension_encrypted_server_name(i: &[u8]) -> IResult<&[u8], TlsExtension> {
     let (i, ciphersuite) = map(be_u16, TlsCipherSuiteID)(i)?;
@@ -669,35 +670,9 @@ fn parse_tls_extension_post_handshake_auth_content(
     Ok((i, TlsExtension::PostHandshakeAuth))
 }
 
-fn var_int(i: &[u8]) -> IResult<&[u8], u64> {
-    let mut v: u64 = i[0] as u64;
-    let prefix = v >> 6;
-    let length = 1 << prefix;
-    v = v & 0x3f;
-    for j in 1..length {
-        v = (v << 8) | i[j] as u64;
-    }
-    Ok((&i[length..], v))
-}
-
 /// QUIC Transport Parameters as defined in QUIC TLS [RFC9001]
-fn parse_tls_extension_quic_transport_parameters(i: &[u8], _ext_len: u16) -> IResult<&[u8], TlsExtension> {
-    let mut qtps = Vec::new();
-    let mut i = i;
-    while !i.is_empty() {
-        let mut id: u64 = 0;
-        let mut length: u64 = 0;
-        (i, id) = var_int(i)?;
-        (i, length) = var_int(i)?;
-        let value = &i[..length as usize];
-        i = &i[length as usize..];
-        qtps.push(QuicTransportParameter {
-            id,
-            value,
-        });
-    }
-
-    Ok((&i[..], TlsExtension::QuicTransportParameters(qtps)))
+fn parse_tls_extension_quic_transport_parameters(i: &[u8], ext_len: u16) -> IResult<&[u8], TlsExtension> {
+    map(take(ext_len), TlsExtension::QuicTransportParameters)(i)
 }
 
 pub fn parse_tls_extension_unknown(i: &[u8]) -> IResult<&[u8], TlsExtension> {
