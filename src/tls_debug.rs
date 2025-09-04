@@ -268,6 +268,17 @@ impl<'a> fmt::Debug for TlsExtension<'a> {
             TlsExtension::RenegotiationInfo(data) => {
                 write!(fmt, "TlsExtension::RenegotiationInfo(data={:?})", data)
             }
+            TlsExtension::EncryptedClientHello {
+                ch_type,
+                ciphersuite,
+                config_id,
+                enc,
+                payload,
+            } => write!(
+                fmt,
+                "TlsExtension::EncryptedClientHello{{ch_type: {:?}, ciphersuite: {:?}, config_id: {:?}, enc_len: {:?}, enc: {:?}, payload_len: {:?}, payload: {:?}}}",
+                ch_type, ciphersuite, config_id, enc.len(), enc, payload.len(), payload
+            ),
             TlsExtension::EncryptedServerName {
                 ciphersuite, group, ..
             } => write!(

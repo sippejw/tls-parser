@@ -95,6 +95,7 @@ impl display TlsExtensionType {
     Grease                              = 0xfafa,
 
     RenegotiationInfo                   = 0xff01, // [RFC5746]
+    EncryptedClientHello                = 0xfe0d, // [draft-ietf-tls-esni]
     EncryptedServerName                 = 0xffce, // draft-ietf-tls-esni
 }
 }
@@ -145,6 +146,15 @@ pub enum TlsExtension<'a> {
     NextProtocolNegotiation,
 
     RenegotiationInfo(&'a [u8]),
+
+    EncryptedClientHello {
+        ch_type: u8,
+        ciphersuite: u32,
+        config_id: u8,
+        enc: &'a [u8],
+        payload: &'a [u8],
+    },
+
     EncryptedServerName {
         ciphersuite: TlsCipherSuiteID,
         group: NamedGroup,
@@ -190,6 +200,7 @@ impl<'a> From<&'a TlsExtension<'a>> for TlsExtensionType {
             TlsExtension::PostHandshakeAuth             => TlsExtensionType::PostHandshakeAuth,
             TlsExtension::NextProtocolNegotiation       => TlsExtensionType::NextProtocolNegotiation,
             TlsExtension::RenegotiationInfo(_)          => TlsExtensionType::RenegotiationInfo,
+            TlsExtension::EncryptedClientHello{..}     => TlsExtensionType::EncryptedClientHello,
             TlsExtension::EncryptedServerName{..}       => TlsExtensionType::EncryptedServerName,
             TlsExtension::QuicTransportParameters(_)    => TlsExtensionType::QuicTransportParameters,
             TlsExtension::Grease(_,_)                   => TlsExtensionType::Grease,
@@ -625,6 +636,22 @@ pub fn parse_tls_extension_renegotiation_info_content(i: &[u8]) -> IResult<&[u8]
     map(length_data(be_u8), TlsExtension::RenegotiationInfo)(i)
 }
 
+// Encrypted Client Hello, defined in [draft-ietf-tls-esni]
+pub fn parse_tls_extension_encrypted_client_hello(i: &[u8]) -> IResult<&[u8], TlsExtension> {
+    let (i, ch_type) = be_u8(i)?;
+    let (i, ciphersuite) = be_u32(i)?;
+    let (i, config_id) = be_u8(i)?;
+    let (i, enc) = length_data(be_u16)(i)?;
+    let (i, payload) = length_data(be_u16)(i)?;
+    let ech = TlsExtension::EncryptedClientHello {
+        ch_type,
+        ciphersuite,
+        config_id,
+        enc,
+        payload,
+    };
+    Ok((i, ech))
+}
 
 /// Encrypted Server Name, defined in [draft-ietf-tls-esni]
 pub fn parse_tls_extension_encrypted_server_name(i: &[u8]) -> IResult<&[u8], TlsExtension> {
@@ -719,6 +746,7 @@ pub fn parse_tls_client_hello_extension(i: &[u8]) -> IResult<&[u8], TlsExtension
         57 => parse_tls_extension_quic_transport_parameters(ext_data, ext_len),
         13172 => parse_tls_extension_npn_content(ext_data, ext_len), // XXX must be empty
         0xff01 => parse_tls_extension_renegotiation_info_content(ext_data),
+        0xfe0d => parse_tls_extension_encrypted_client_hello(ext_data),
         0xffce => parse_tls_extension_encrypted_server_name(ext_data),
         _ => Ok((
             i,
