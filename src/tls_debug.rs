@@ -268,6 +268,17 @@ impl<'a> fmt::Debug for TlsExtension<'a> {
             TlsExtension::RenegotiationInfo(data) => {
                 write!(fmt, "TlsExtension::RenegotiationInfo(data={:?})", data)
             }
+            TlsExtension::EncryptedClientHello {
+                ch_type,
+                ciphersuite,
+                config_id,
+                enc,
+                payload,
+            } => write!(
+                fmt,
+                "TlsExtension::EncryptedClientHello{{ch_type: {:?}, ciphersuite: {:?}, config_id: {:?}, enc_len: {:?}, enc: {:?}, payload_len: {:?}, payload: {:?}}}",
+                ch_type, ciphersuite, config_id, enc.len(), enc, payload.len(), payload
+            ),
             TlsExtension::EncryptedServerName {
                 ciphersuite, group, ..
             } => write!(
@@ -275,6 +286,10 @@ impl<'a> fmt::Debug for TlsExtension<'a> {
                 "TlsExtension::EncryptedServerName{{cipher: {:?}, group: {:?} ..}}",
                 ciphersuite, group
             ),
+            TlsExtension::QuicTransportParameters(ref v) => {
+                let v: Vec<_> = v.iter().map(|c| format!("{:?}", c)).collect();
+                write!(fmt, "TlsExtension::QuicTransportParameters({:?})", v)
+            }
             TlsExtension::Grease(t, data) => write!(
                 fmt,
                 "TlsExtension::Grease(0x{:x},data={:?})",

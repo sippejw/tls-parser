@@ -95,6 +95,7 @@ impl display TlsExtensionType {
     Grease                              = 0xfafa,
 
     RenegotiationInfo                   = 0xff01, // [RFC5746]
+    EncryptedClientHello                = 0xfe0d, // [draft-ietf-tls-esni]
     EncryptedServerName                 = 0xffce, // draft-ietf-tls-esni
 }
 }
@@ -145,6 +146,15 @@ pub enum TlsExtension<'a> {
     NextProtocolNegotiation,
 
     RenegotiationInfo(&'a [u8]),
+
+    EncryptedClientHello {
+        ch_type: u8,
+        ciphersuite: u32,
+        config_id: u8,
+        enc: &'a [u8],
+        payload: &'a [u8],
+    },
+
     EncryptedServerName {
         ciphersuite: TlsCipherSuiteID,
         group: NamedGroup,
@@ -152,6 +162,8 @@ pub enum TlsExtension<'a> {
         record_digest: &'a [u8],
         encrypted_sni: &'a [u8],
     },
+
+    QuicTransportParameters(&'a [u8]),
 
     Grease(u16, &'a [u8]),
 
@@ -188,7 +200,9 @@ impl<'a> From<&'a TlsExtension<'a>> for TlsExtensionType {
             TlsExtension::PostHandshakeAuth             => TlsExtensionType::PostHandshakeAuth,
             TlsExtension::NextProtocolNegotiation       => TlsExtensionType::NextProtocolNegotiation,
             TlsExtension::RenegotiationInfo(_)          => TlsExtensionType::RenegotiationInfo,
+            TlsExtension::EncryptedClientHello{..}     => TlsExtensionType::EncryptedClientHello,
             TlsExtension::EncryptedServerName{..}       => TlsExtensionType::EncryptedServerName,
+            TlsExtension::QuicTransportParameters(_)    => TlsExtensionType::QuicTransportParameters,
             TlsExtension::Grease(_,_)                   => TlsExtensionType::Grease,
             TlsExtension::Unknown(x,_)                  => x
         }
@@ -234,6 +248,13 @@ impl debug CertificateStatusType {
 pub struct OidFilter<'a> {
     pub cert_ext_oid: &'a [u8],
     pub cert_ext_val: &'a [u8],
+}
+
+
+#[derive(Clone, Debug, PartialEq, Hash, Serialize)]
+pub struct QuicTransportParameter<'a>{
+    pub id: u64,
+    pub value: &'a [u8],
 }
 
 // struct {
@@ -615,6 +636,23 @@ pub fn parse_tls_extension_renegotiation_info_content(i: &[u8]) -> IResult<&[u8]
     map(length_data(be_u8), TlsExtension::RenegotiationInfo)(i)
 }
 
+// Encrypted Client Hello, defined in [draft-ietf-tls-esni]
+pub fn parse_tls_extension_encrypted_client_hello(i: &[u8]) -> IResult<&[u8], TlsExtension> {
+    let (i, ch_type) = be_u8(i)?;
+    let (i, ciphersuite) = be_u32(i)?;
+    let (i, config_id) = be_u8(i)?;
+    let (i, enc) = length_data(be_u16)(i)?;
+    let (i, payload) = length_data(be_u16)(i)?;
+    let ech = TlsExtension::EncryptedClientHello {
+        ch_type,
+        ciphersuite,
+        config_id,
+        enc,
+        payload,
+    };
+    Ok((i, ech))
+}
+
 /// Encrypted Server Name, defined in [draft-ietf-tls-esni]
 pub fn parse_tls_extension_encrypted_server_name(i: &[u8]) -> IResult<&[u8], TlsExtension> {
     let (i, ciphersuite) = map(be_u16, TlsCipherSuiteID)(i)?;
@@ -659,6 +697,11 @@ fn parse_tls_extension_post_handshake_auth_content(
     Ok((i, TlsExtension::PostHandshakeAuth))
 }
 
+/// QUIC Transport Parameters as defined in QUIC TLS [RFC9001]
+fn parse_tls_extension_quic_transport_parameters(i: &[u8], ext_len: u16) -> IResult<&[u8], TlsExtension> {
+    map(take(ext_len), TlsExtension::QuicTransportParameters)(i)
+}
+
 pub fn parse_tls_extension_unknown(i: &[u8]) -> IResult<&[u8], TlsExtension> {
     let (i, ext_type) = be_u16(i)?;
     let (i, ext_data) = length_data(be_u16)(i)?;
@@ -700,8 +743,10 @@ pub fn parse_tls_client_hello_extension(i: &[u8]) -> IResult<&[u8], TlsExtension
         48 => parse_tls_extension_oid_filters(ext_data),
         49 => parse_tls_extension_post_handshake_auth_content(ext_data, ext_len),
         51 => parse_tls_extension_client_shares_content(ext_data, ext_len),
+        57 => parse_tls_extension_quic_transport_parameters(ext_data, ext_len),
         13172 => parse_tls_extension_npn_content(ext_data, ext_len), // XXX must be empty
         0xff01 => parse_tls_extension_renegotiation_info_content(ext_data),
+        0xfe0d => parse_tls_extension_encrypted_client_hello(ext_data),
         0xffce => parse_tls_extension_encrypted_server_name(ext_data),
         _ => Ok((
             i,
